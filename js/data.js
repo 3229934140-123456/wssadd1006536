@@ -1,3 +1,12 @@
+const doctors = [
+    { id: 'dr_zhang', name: '张医生', role: '主治医师', title: '牙周专科' },
+    { id: 'dr_li', name: '李医生', role: '主治医师', title: '全科口腔' },
+    { id: 'dr_wang', name: '王医生', role: '副主任医师', title: '种植专科' },
+    { id: 'dr_zhao', name: '赵医生', role: '主治医师', title: '正畸专科' },
+    { id: 'dr_assistant_liu', name: '刘助理', role: '医助', title: '口腔卫生士' },
+    { id: 'dr_assistant_chen', name: '陈助理', role: '医助', title: '口腔卫生士' }
+];
+
 const mockPatients = [
     {
         id: 'P2024001',
@@ -19,6 +28,27 @@ const mockPatients = [
         history: [
             { date: '2026-05-15', event: '首次洁治+牙周探诊', doctor: '张医生', note: '全口洁治，6个位点PD>4mm，BOP(+)' },
             { date: '2026-03-20', event: '初诊检查', doctor: '李医生', note: '诊断为慢性牙周炎，建议系统治疗' }
+        ],
+        followupRecords: [
+            {
+                id: 'FU001',
+                date: '2026-05-15',
+                doctor: '张医生',
+                followupData: {
+                    brushingMethod: 'bass',
+                    brushingFrequency: 'twice',
+                    flossUse: 'rarely',
+                    irrigatorUse: 'never',
+                    bleedingChange: null,
+                    gumCondition: ['bleeding', 'red']
+                },
+                conclusion: {
+                    recommendation: 'scaling',
+                    visitInterval: '1month',
+                    note: '首次就诊，洁治后安排后续评估'
+                },
+                status: 'submitted'
+            }
         ]
     },
     {
@@ -40,6 +70,27 @@ const mockPatients = [
         photos: 3,
         history: [
             { date: '2026-06-01', event: '预防性洁治', doctor: '张医生', note: '全口洁治抛光，口腔卫生指导' }
+        ],
+        followupRecords: [
+            {
+                id: 'FU002',
+                date: '2026-06-01',
+                doctor: '张医生',
+                followupData: {
+                    brushingMethod: 'bass',
+                    brushingFrequency: 'twice',
+                    flossUse: 'daily',
+                    irrigatorUse: 'weekly',
+                    bleedingChange: null,
+                    gumCondition: ['normal']
+                },
+                conclusion: {
+                    recommendation: 'homecare',
+                    visitInterval: '6months',
+                    note: '维护良好，继续保持'
+                },
+                status: 'submitted'
+            }
         ]
     },
     {
@@ -62,6 +113,27 @@ const mockPatients = [
         history: [
             { date: '2026-04-28', event: '种植体维护洁治', doctor: '王医生', note: '种植体周洁治，钛刮治器使用' },
             { date: '2025-12-15', event: '种植体植入', doctor: '王医生', note: '右下4号种植体植入，愈合良好' }
+        ],
+        followupRecords: [
+            {
+                id: 'FU003',
+                date: '2026-04-28',
+                doctor: '王医生',
+                followupData: {
+                    brushingMethod: 'vertical',
+                    brushingFrequency: 'twice',
+                    flossUse: 'rarely',
+                    irrigatorUse: 'weekly',
+                    bleedingChange: null,
+                    gumCondition: ['red', 'sensitive']
+                },
+                conclusion: {
+                    recommendation: 'return',
+                    visitInterval: '3months',
+                    note: '加强种植体清洁指导'
+                },
+                status: 'submitted'
+            }
         ]
     },
     {
@@ -84,7 +156,8 @@ const mockPatients = [
         history: [
             { date: '2026-06-10', event: '正畸期间洁治', doctor: '李医生', note: '托槽周围洁治抛光，口腔卫生指导' },
             { date: '2026-03-05', event: '正畸治疗开始', doctor: '赵医生', note: '固定矫治器佩戴中' }
-        ]
+        ],
+        followupRecords: []
     },
     {
         id: 'P2024005',
@@ -106,6 +179,27 @@ const mockPatients = [
         history: [
             { date: '2026-05-20', event: '初步洁治+检查', doctor: '张医生', note: '全口洁治，PD多处>5mm，建议系统牙周治疗' },
             { date: '2025-11-10', event: '上次洁治', doctor: '李医生', note: '牙龈炎，建议定期复查' }
+        ],
+        followupRecords: [
+            {
+                id: 'FU005',
+                date: '2026-05-20',
+                doctor: '张医生',
+                followupData: {
+                    brushingMethod: 'horizontal',
+                    brushingFrequency: 'once',
+                    flossUse: 'never',
+                    irrigatorUse: 'never',
+                    bleedingChange: null,
+                    gumCondition: ['red', 'bleeding', 'loose']
+                },
+                conclusion: {
+                    recommendation: 'refer',
+                    visitInterval: '1month',
+                    note: '重度牙周炎，尽快转牙周治疗'
+                },
+                status: 'submitted'
+            }
         ]
     },
     {
@@ -128,7 +222,8 @@ const mockPatients = [
         history: [
             { date: '2026-06-05', event: '定期洁治', doctor: '张医生', note: '口腔卫生状况良好' },
             { date: '2025-12-05', event: '半年复查', doctor: '张医生', note: '牙龈健康' }
-        ]
+        ],
+        followupRecords: []
     },
     {
         id: 'P2024007',
@@ -151,6 +246,27 @@ const mockPatients = [
             { date: '2026-03-15', event: '种植体复查', doctor: '王医生', note: '种植体周围炎，建议治疗' },
             { date: '2025-09-20', event: '种植体维护', doctor: '王医生', note: '状况良好' },
             { date: '2024-06-10', event: '种植体植入', doctor: '王医生', note: '左上6号种植' }
+        ],
+        followupRecords: [
+            {
+                id: 'FU007',
+                date: '2026-03-15',
+                doctor: '王医生',
+                followupData: {
+                    brushingMethod: 'unclear',
+                    brushingFrequency: 'once',
+                    flossUse: 'never',
+                    irrigatorUse: 'rarely',
+                    bleedingChange: null,
+                    gumCondition: ['pus', 'red', 'bleeding']
+                },
+                conclusion: {
+                    recommendation: 'refer',
+                    visitInterval: '1month',
+                    note: '种植体周围炎，需专项治疗'
+                },
+                status: 'submitted'
+            }
         ]
     },
     {
@@ -173,7 +289,8 @@ const mockPatients = [
         history: [
             { date: '2026-06-12', event: '正畸洁治', doctor: '李医生', note: '全口洁治，口腔卫生宣教' },
             { date: '2025-08-20', event: '正畸开始', doctor: '赵医生', note: '不拔牙矫治' }
-        ]
+        ],
+        followupRecords: []
     },
     {
         id: 'P2024009',
@@ -195,7 +312,8 @@ const mockPatients = [
         history: [
             { date: '2026-05-08', event: '洁治+牙周评估', doctor: '张医生', note: '中度牙周炎可能，需进一步检查' },
             { date: '2025-10-15', event: '上次洁治', doctor: '李医生', note: '牙龈炎' }
-        ]
+        ],
+        followupRecords: []
     },
     {
         id: 'P2024010',
@@ -216,7 +334,8 @@ const mockPatients = [
         photos: 2,
         history: [
             { date: '2026-06-08', event: '年度洁治', doctor: '李医生', note: '轻度牙龈炎，口腔卫生指导' }
-        ]
+        ],
+        followupRecords: []
     }
 ];
 
@@ -319,3 +438,10 @@ const visitOptions = [
     { value: '12months', label: '1年后' },
     { value: 'custom', label: '自定义' }
 ];
+
+const StorageKeys = {
+    PATIENTS: 'periodontal_patients',
+    CURRENT_DOCTOR: 'periodontal_current_doctor',
+    CURRENT_PATIENT: 'periodontal_current_patient',
+    DRAFTS: 'periodontal_drafts'
+};

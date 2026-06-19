@@ -21,7 +21,11 @@
                 </div>
                 <div class="clinic-info">
                     <span class="clinic-name">悦齿牙周专科诊所</span>
-                    <span class="user-role">主治医师：张医生</span>
+                    <div class="doctor-selector">
+                        <span class="selector-label">当前记录医生：</span>
+                        <select class="doctor-select" id="doctorSelect">
+                        </select>
+                    </div>
                 </div>
             </div>
             <div class="header-right">
@@ -29,9 +33,17 @@
                     <span class="date-label">今日</span>
                     <span class="date-value" id="currentDate">2026-06-20</span>
                 </div>
+                <div class="storage-indicator" title="数据已自动保存到本地">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    <span>本地存储</span>
+                </div>
                 <div class="notification-badge">
                     <span class="badge-icon">🔔</span>
-                    <span class="badge-count">8</span>
+                    <span class="badge-count" id="notificationCount">0</span>
                 </div>
             </div>
         </header>
@@ -41,7 +53,7 @@
                 <div class="panel-header">
                 <h2 class="panel-title">患者队列</h2>
                 <div class="panel-actions">
-                    <button class="btn-icon" title="刷新">
+                    <button class="btn-icon" title="刷新" id="refreshBtn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="23 4 23 10 17 10"/>
                         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -126,12 +138,17 @@
                 <span class="footer-item">今日随访：<strong id="todayCount">0</strong> 位患者</span>
                 <span class="footer-divider">|</span>
                 <span class="footer-item">待处理：<strong id="pendingCount">0</strong> 位</span>
+                <span class="footer-divider">|</span>
+                <span class="footer-item">历史记录：<strong id="totalRecords">0</strong> 条</span>
             </div>
             <div class="footer-right">
-                <span class="version">v1.0.0</span>
+                <span class="footer-item" id="saveStatus">数据已自动保存</span>
+                <span class="version">v1.1.0</span>
             </div>
         </footer>
     </div>
+
+    <div class="toast-container" id="toastContainer"></div>
 
     <script src="js/data.js"></script>
     <script src="js/app.js"></script>
