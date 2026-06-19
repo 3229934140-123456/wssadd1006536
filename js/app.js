@@ -97,28 +97,16 @@ class PeriodontalApp {
         selectEl.onchange = (e) => {
             const doctor = doctors.find(d => d.id === e.target.value);
             if (doctor) {
-                const prevDoctor = this.currentDoctor;
                 this.currentDoctor = doctor;
-                this.handoffChoice = null;
                 this.saveToStorage();
 
                 if (this.selectedPatient) {
-                    const records = this.selectedPatient.followupRecords || [];
-                    const draftRecord = records.find(r => r.status === 'draft');
-                    if (draftRecord && draftRecord.doctor !== doctor.name) {
-                        this.showToast(
-                            'warning',
-                            '医生已切换',
-                            `从${prevDoctor?.name}切换为${doctor.name}\n当前患者有${draftRecord.doctor}的草稿，请选择处理方式`
-                        );
-                    } else {
-                        this.showToast('info', '已切换医生', `当前记录医生：${doctor.name}（${doctor.role}）`);
-                    }
-                    this.renderDetailPanel();
-                    this.renderConclusionPanel();
+                    this.selectPatient(this.selectedPatientId, false);
                 } else {
                     this.showToast('info', '已切换医生', `当前记录医生：${doctor.name}（${doctor.role}）`);
                 }
+                this.updateNotificationCount();
+                this.renderPatientList();
             }
         };
     }
@@ -203,9 +191,20 @@ class PeriodontalApp {
 
         listEl.innerHTML = patients.map(patient => {
             const submittedCount = (patient.followupRecords || []).filter(r => r.status === 'submitted').length;
-            const draftRecord = (patient.followupRecords || []).find(r => r.status === 'draft');
-            const hasOtherDraft = draftRecord && draftRecord.doctor !== this.currentDoctor?.name;
+            const allDrafts = (patient.followupRecords || []).filter(r => r.status === 'draft');
+            const myDraft = allDrafts.find(r => r.doctor === this.currentDoctor?.name);
+            const otherDrafts = allDrafts.filter(r => r.doctor !== this.currentDoctor?.name);
+            const hasOtherDraft = otherDrafts.length > 0;
             const isActive = this.selectedPatientId === patient.id;
+
+            let draftHint = '';
+            if (myDraft && hasOtherDraft) {
+                draftHint = `<span class="continue-hint">我的草稿 +${otherDrafts.length}</span>`;
+            } else if (myDraft) {
+                draftHint = `<span class="continue-hint">我的草稿</span>`;
+            } else if (hasOtherDraft) {
+                draftHint = `<span class="continue-hint">${otherDrafts[0].doctor}的草稿</span>`;
+            }
 
             return `
                 <div class="patient-card ${isActive ? 'active' : ''}" 
@@ -222,10 +221,10 @@ class PeriodontalApp {
                         <span class="risk-badge ${patient.riskLevel}">${patient.riskLabel}</span>
                         <span class="last-visit">上次: ${this.formatDate(patient.lastVisit)}</span>
                     </div>
-                    ${(submittedCount > 0 || draftRecord) ? `
+                    ${(submittedCount > 0 || allDrafts.length > 0) ? `
                         <div class="patient-card-footer">
                             <span class="record-count">随访：<strong>${submittedCount}</strong> 条</span>
-                            ${draftRecord ? `<span class="continue-hint">${hasOtherDraft ? draftRecord.doctor + '的草稿' : '我的草稿'}</span>` : ''}
+                            ${draftHint}
                         </div>
                     ` : ''}
                 </div>
@@ -243,25 +242,29 @@ class PeriodontalApp {
         this.expandedRecordIds = new Set();
 
         const records = this.selectedPatient.followupRecords || [];
-        const draftRecord = records.find(r => r.status === 'draft');
+        const myDraft = records.find(r => r.status === 'draft' && r.doctor === this.currentDoctor?.name);
+        const otherDrafts = records.filter(r => r.status === 'draft' && r.doctor !== this.currentDoctor?.name);
+        const otherDraft = otherDrafts.length > 0 ? otherDrafts.sort((a,b) => new Date(b.date) - new Date(a.date))[0] : null;
         const lastSubmitted = this.getLastSubmittedRecord();
 
-        if (draftRecord && !fromStorage) {
-            if (draftRecord.doctor !== this.currentDoctor?.name) {
-                this.handoffChoice = 'ask';
-                this.followupData = {};
-                this.conclusionData = {};
+        if (myDraft) {
+            this.handoffChoice = 'continue';
+            this.editingDraftId = myDraft.id;
+            this.followupData = { ...myDraft.followupData };
+            this.conclusionData = { ...myDraft.conclusion };
+            if (!fromStorage) {
+                this.showToast('info', '载入草稿', `已载入您 ${this.formatDate(myDraft.date)} 的未完成记录`);
+            }
+        } else if (otherDraft) {
+            this.handoffChoice = 'ask';
+            this.followupData = {};
+            this.conclusionData = {};
+            if (!fromStorage) {
                 this.showToast(
                     'warning',
-                    `发现 ${draftRecord.doctor} 的草稿`,
+                    `发现 ${otherDraft.doctor} 的草稿`,
                     '可选择继续编辑该草稿，或放弃新建一条记录'
                 );
-            } else {
-                this.handoffChoice = 'continue';
-                this.editingDraftId = draftRecord.id;
-                this.followupData = { ...draftRecord.followupData };
-                this.conclusionData = { ...draftRecord.conclusion };
-                this.showToast('info', '载入草稿', `已载入您 ${this.formatDate(draftRecord.date)} 的未完成记录`);
             }
         } else {
             this.followupData = {};
@@ -275,9 +278,7 @@ class PeriodontalApp {
             }
         }
 
-        if (!fromStorage) {
-            this.generateAIRecommendation();
-        }
+        this.generateAIRecommendation();
 
         this.saveToStorage();
         this.renderPatientList();
@@ -288,13 +289,16 @@ class PeriodontalApp {
     handleHandoffChoice(choice) {
         this.handoffChoice = choice;
         const records = this.selectedPatient.followupRecords || [];
-        const draftRecord = records.find(r => r.status === 'draft');
+        const otherDrafts = records.filter(r => r.status === 'draft' && r.doctor !== this.currentDoctor?.name);
+        const latestOtherDraft = otherDrafts.length > 0
+            ? otherDrafts.sort((a,b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date))[0]
+            : null;
 
-        if (choice === 'continue' && draftRecord) {
-            this.editingDraftId = draftRecord.id;
-            this.followupData = { ...draftRecord.followupData };
-            this.conclusionData = { ...draftRecord.conclusion };
-            this.showToast('info', '继续编辑草稿', `草稿由 ${draftRecord.doctor} 创建`);
+        if (choice === 'continue' && latestOtherDraft) {
+            this.editingDraftId = latestOtherDraft.id;
+            this.followupData = { ...latestOtherDraft.followupData };
+            this.conclusionData = { ...latestOtherDraft.conclusion };
+            this.showToast('info', '继续编辑草稿', `草稿由 ${latestOtherDraft.doctor} 创建`);
         } else {
             this.editingDraftId = null;
             this.followupData = {};
@@ -312,8 +316,10 @@ class PeriodontalApp {
         const pIndex = this.patients.findIndex(p => p.id === this.selectedPatient.id);
         if (pIndex === -1) return;
 
-        this.patients[pIndex].followupRecords = (this.patients[pIndex].followupRecords || [])
-            .filter(r => r.status !== 'draft');
+        if (this.editingDraftId) {
+            this.patients[pIndex].followupRecords = (this.patients[pIndex].followupRecords || [])
+                .filter(r => r.id !== this.editingDraftId);
+        }
 
         this.followupData = {};
         this.conclusionData = {};
@@ -379,17 +385,24 @@ class PeriodontalApp {
         const lastRecord = this.getLastSubmittedRecord();
         const allSubmitted = this.getAllSubmittedRecords();
         const allRecordsChrono = this.getAllRecordsChronologically();
-        const draftRecord = (p.followupRecords || []).find(r => r.status === 'draft');
+        const allDrafts = (p.followupRecords || []).filter(r => r.status === 'draft');
+        const otherDrafts = allDrafts.filter(r => r.doctor !== this.currentDoctor?.name);
+        const latestOtherDraft = otherDrafts.length > 0
+            ? otherDrafts.sort((a,b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date))[0]
+            : null;
+        const editingDraft = this.editingDraftId
+            ? (p.followupRecords || []).find(r => r.id === this.editingDraftId)
+            : null;
 
         let handoffBanner = '';
-        if (this.handoffChoice === 'ask' && draftRecord) {
+        if (this.handoffChoice === 'ask' && latestOtherDraft) {
             handoffBanner = `
                 <div class="handoff-banner">
                     <div class="handoff-title">
-                        🤝 团队交接：发现 ${draftRecord.doctor} 的未完成草稿
+                        🤝 团队交接：发现 ${latestOtherDraft.doctor} 的未完成草稿
                     </div>
                     <div class="handoff-content">
-                        该患者有 <strong>${this.formatDate(draftRecord.date)}</strong> 由 <strong>${draftRecord.doctor}</strong> 创建的随访草稿。
+                        该患者有 <strong>${this.formatDate(latestOtherDraft.date)}</strong> 由 <strong>${latestOtherDraft.doctor}</strong> 创建的随访草稿。
                         <br>您可以选择继续编辑该草稿，或放弃并开始一条全新的记录。
                     </div>
                     <div class="handoff-actions">
@@ -405,13 +418,13 @@ class PeriodontalApp {
         }
 
         let draftBanner = '';
-        if (this.editingDraftId && draftRecord && draftRecord.id === this.editingDraftId && this.handoffChoice !== 'ask') {
+        if (this.editingDraftId && editingDraft && this.handoffChoice !== 'ask') {
             draftBanner = `
                 <div class="draft-edit-banner">
                     <span>
                         <strong>✏️ 正在编辑草稿</strong> · 
-                        ${draftRecord.doctor} · ${this.formatDate(draftRecord.date)}
-                        ${draftRecord.doctor !== this.currentDoctor?.name ? 
+                        ${editingDraft.doctor} · ${this.formatDate(editingDraft.date)}
+                        ${editingDraft.doctor !== this.currentDoctor?.name ? 
                             ' <span class="continue-hint">跨医生续写</span>' : 
                             '<span class="new-record-badge">我的草稿</span>'}
                     </span>
@@ -1151,6 +1164,7 @@ class PeriodontalApp {
 
     updateFollowupNote(value) {
         this.followupData.note = value;
+        this.updateSummaryText();
     }
 
     generateAIRecommendation() {
@@ -1376,7 +1390,13 @@ class PeriodontalApp {
         const hasConclusion = this.conclusionData.recommendation || this.conclusionData.visitInterval;
         const records = p.followupRecords || [];
         const submittedCount = records.filter(r => r.status === 'submitted').length;
-        const draftRecord = records.find(r => r.status === 'draft');
+        const editingDraft = this.editingDraftId
+            ? records.find(r => r.id === this.editingDraftId)
+            : null;
+        const otherDrafts = records.filter(r => r.status === 'draft' && r.doctor !== this.currentDoctor?.name);
+        const latestOtherDraft = otherDrafts.length > 0
+            ? otherDrafts.sort((a,b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date))[0]
+            : null;
 
         if (this.handoffChoice === 'ask') {
             contentEl.innerHTML = `
@@ -1391,7 +1411,7 @@ class PeriodontalApp {
                         请先在左侧选择草稿处理方式
                     </p>
                     <p style="font-size:12px; color:var(--text-tertiary);">
-                        该患者有 ${draftRecord?.doctor || '其他医生'} 未完成的草稿
+                        该患者有 ${latestOtherDraft?.doctor || '其他医生'} 未完成的草稿
                     </p>
                 </div>
             `;
@@ -1511,7 +1531,7 @@ class PeriodontalApp {
                         <span class="record-doctor-tag current-doctor" style="margin-left:6px;">
                             ${this.currentDoctor?.role}
                         </span>
-                        ${this.editingDraftId && draftRecord && draftRecord.doctor !== this.currentDoctor?.name ? 
+                        ${this.editingDraftId && editingDraft && editingDraft.doctor !== this.currentDoctor?.name ? 
                             '<span class="continue-hint" style="margin-left:6px;">跨医生续写</span>' : ''}
                     </div>
                     <div>记录日期：${this.formatDate(new Date())}</div>
@@ -1552,7 +1572,14 @@ class PeriodontalApp {
 
     updateConclusionNote(value) {
         this.conclusionData.note = value;
-        this.renderConclusionPanel();
+        this.updateSummaryText();
+    }
+
+    updateSummaryText() {
+        const textarea = document.getElementById('summaryTextarea');
+        if (textarea) {
+            textarea.value = this.generateFollowupSummary();
+        }
     }
 
     saveDraft() {
@@ -1576,7 +1603,9 @@ class PeriodontalApp {
         if (this.editingDraftId) {
             draftIdx = this.patients[pIndex].followupRecords.findIndex(r => r.id === this.editingDraftId);
         } else {
-            draftIdx = this.patients[pIndex].followupRecords.findIndex(r => r.status === 'draft');
+            draftIdx = this.patients[pIndex].followupRecords.findIndex(
+                r => r.status === 'draft' && r.doctor === this.currentDoctor?.name
+            );
         }
 
         const existingId = draftIdx > -1 ? this.patients[pIndex].followupRecords[draftIdx].id : null;
@@ -1633,7 +1662,9 @@ class PeriodontalApp {
         if (this.editingDraftId) {
             draftIdx = this.patients[pIndex].followupRecords.findIndex(r => r.id === this.editingDraftId);
         } else {
-            draftIdx = this.patients[pIndex].followupRecords.findIndex(r => r.status === 'draft');
+            draftIdx = this.patients[pIndex].followupRecords.findIndex(
+                r => r.status === 'draft' && r.doctor === this.currentDoctor?.name
+            );
         }
 
         const existingId = draftIdx > -1 ? this.patients[pIndex].followupRecords[draftIdx].id : null;
@@ -1655,17 +1686,6 @@ class PeriodontalApp {
         }
 
         this.patients[pIndex].lastVisit = finalRecord.date;
-        this.patients[pIndex].history = this.patients[pIndex].history || [];
-
-        const rec = recommendations.find(r => r.id === finalRecord.conclusion.recommendation);
-        const visit = visitOptions.find(v => v.value === finalRecord.conclusion.visitInterval);
-        
-        this.patients[pIndex].history.unshift({
-            date: finalRecord.date,
-            event: `${rec?.title || '随访'} · 复诊${visit?.label || ''}`,
-            doctor: finalRecord.doctor,
-            note: finalRecord.conclusion.note || this.getFollowupSummary(finalRecord)
-        });
 
         this.selectedPatient = this.patients[pIndex];
         this.editingDraftId = null;
