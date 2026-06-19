@@ -477,6 +477,8 @@ class PeriodontalApp {
 
             ${lastRecord ? this.renderLastJudgmentBox(lastRecord) : ''}
 
+            ${this.renderHandoffSummary(p, lastRecord, otherDrafts)}
+
             ${allRecordsChrono.length >= 1 ? this.renderTrendView(allRecordsChrono) : ''}
 
             <div class="detail-section">
@@ -539,7 +541,10 @@ class PeriodontalApp {
                 </div>
             </div>
 
-            ${this.renderHistorySection(p)}
+            <div class="history-with-qc">
+                ${this.renderHistorySection(p)}
+                ${this.renderQualityControlView(p)}
+            </div>
 
             ${this.handoffChoice !== 'ask' ? `
             <div class="detail-section">
@@ -746,6 +751,92 @@ class PeriodontalApp {
         `;
     }
 
+    renderHandoffSummary(patient, lastRecord, otherDrafts) {
+        if (!lastRecord && otherDrafts.length === 0 && patient.doctor === this.currentDoctor?.name) {
+            return '';
+        }
+
+        const riskLabels = {
+            'periodontitis': '疑似牙周炎，需重点关注',
+            'implant': '种植体维护患者',
+            'ortho': '正畸中，口腔卫生难度大',
+            'gingivitis': '牙龈炎，需加强维护'
+        };
+
+        const riskAlert = riskLabels[patient.riskLevel] || '常规维护';
+        const isHighRisk = patient.status === 'attention' || patient.plaqueLevel === 'poor';
+
+        let draftInfo = '';
+        if (otherDrafts.length > 0) {
+            const latest = otherDrafts.sort((a,b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date))[0];
+            draftInfo = `
+                <div class="handoff-row">
+                    <span class="handoff-icon">📝</span>
+                    <div class="handoff-content">
+                        <div class="handoff-label">未完成草稿</div>
+                        <div class="handoff-value"><strong>${latest.doctor}</strong> · ${this.formatDate(latest.date)}</div>
+                        <div class="handoff-sub">${latest.followupData?.note || latest.conclusion?.note || '有未完成的随访记录'}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        let lastRecordInfo = '';
+        if (lastRecord) {
+            const rec = recommendations.find(r => r.id === lastRecord.conclusion?.recommendation);
+            const visit = visitOptions.find(v => v.value === lastRecord.conclusion?.visitInterval);
+            lastRecordInfo = `
+                <div class="handoff-row">
+                    <span class="handoff-icon">📋</span>
+                    <div class="handoff-content">
+                        <div class="handoff-label">上次提交结论</div>
+                        <div class="handoff-value"><strong>${lastRecord.doctor}</strong> · ${this.formatDate(lastRecord.date)}</div>
+                        <div class="handoff-sub">建议：${rec?.title || '未选择'} · 复诊：${visit?.label || '未选择'}</div>
+                        ${lastRecord.conclusion?.note ? `<div class="handoff-sub">备注：${lastRecord.conclusion.note}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        let originalDoctorInfo = '';
+        if (patient.doctor && patient.doctor !== this.currentDoctor?.name) {
+            originalDoctorInfo = `
+                <div class="handoff-row">
+                    <span class="handoff-icon">👤</span>
+                    <div class="handoff-content">
+                        <div class="handoff-label">原负责医生</div>
+                        <div class="handoff-value"><strong>${patient.doctor}</strong></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="handoff-summary-box">
+                <div class="handoff-summary-header">
+                    <span class="handoff-summary-title">
+                        📑 交接摘要
+                        <span style="font-size:11px; font-weight:400; color:var(--text-tertiary);">· 接手前快速参考</span>
+                    </span>
+                    ${isHighRisk ? '<span class="risk-alert-badge">⚠️ 高风险</span>' : ''}
+                </div>
+                <div class="handoff-summary-body">
+                    <div class="handoff-row">
+                        <span class="handoff-icon">🎯</span>
+                        <div class="handoff-content">
+                            <div class="handoff-label">风险提示</div>
+                            <div class="handoff-value">${riskAlert}</div>
+                            <div class="handoff-sub">菌斑控制：${patient.plaqueLevel === 'good' ? '良好' : patient.plaqueLevel === 'moderate' ? '一般' : '较差'} · ${patient.bleedingSites}</div>
+                        </div>
+                    </div>
+                    ${lastRecordInfo}
+                    ${draftInfo}
+                    ${originalDoctorInfo}
+                </div>
+            </div>
+        `;
+    }
+
     renderComparisonSection(allRecords) {
         const lastRecord = allRecords[allRecords.length - 1];
         const prevRecord = allRecords.length > 1 ? allRecords[allRecords.length - 2] : null;
@@ -826,6 +917,107 @@ class PeriodontalApp {
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
+            </div>
+        `;
+    }
+
+    renderQualityControlView(patient) {
+        const records = (patient.followupRecords || []).slice().sort((a, b) => 
+            new Date(b.date) - new Date(a.date)
+        );
+
+        if (records.length === 0) return '';
+
+        const criticalFields = [
+            { key: 'brushingMethod', label: '刷牙', source: 'followup' },
+            { key: 'flossUse', label: '牙线', source: 'followup' },
+            { key: 'bleedingChange', label: '出血', source: 'followup' },
+            { key: 'recommendation', label: '建议', source: 'conclusion' },
+            { key: 'visitInterval', label: '复诊', source: 'conclusion' }
+        ];
+
+        const qcCards = records.map(record => {
+            const fd = record.followupData || {};
+            const cd = record.conclusion || {};
+            
+            const fieldStatus = criticalFields.map(field => {
+                const value = field.source === 'followup' 
+                    ? fd[field.key] 
+                    : cd[field.key];
+                const isFilled = Array.isArray(value) ? value.length > 0 : !!value;
+                return {
+                    ...field,
+                    value,
+                    isFilled
+                };
+            });
+
+            const filledCount = fieldStatus.filter(f => f.isFilled).length;
+            const totalCount = fieldStatus.length;
+            const completeness = Math.round((filledCount / totalCount) * 100);
+            const isComplete = completeness === 100;
+            const isDraft = record.status === 'draft';
+            const isCurrentDoctor = record.doctor === this.currentDoctor?.name;
+
+            const qcTags = fieldStatus.map(f => `
+                <span class="qc-item-tag ${f.isFilled ? 'ok' : 'missing'}">
+                    ${f.isFilled ? '✓' : '✗'} ${f.label}
+                </span>
+            `).join('');
+
+            let actionText = '';
+            let onClick = '';
+            if (isDraft && isCurrentDoctor) {
+                actionText = '✏️ 继续编辑';
+                onClick = `onclick="event.stopPropagation(); app.continueEditingDraft('${record.id}')"`;
+            } else if (isDraft && !isCurrentDoctor) {
+                actionText = '🤝 跨医生续写';
+                onClick = `onclick="event.stopPropagation(); app.continueEditingDraft('${record.id}')"`;
+            }
+
+            const completenessColor = isComplete 
+                ? 'var(--success-color)' 
+                : completeness >= 60 
+                    ? 'var(--warning-color)' 
+                    : 'var(--danger-color)';
+
+            return `
+                <div class="qc-card" ${onClick}>
+                    <div class="qc-card-header">
+                        <span class="qc-card-date">${this.formatDate(record.date).slice(5)}</span>
+                        <span class="qc-card-doctor">${record.doctor}</span>
+                    </div>
+                    <span class="qc-status-badge ${isDraft ? 'draft' : isComplete ? 'complete' : 'incomplete'}">
+                        ${isDraft ? '草稿' : isComplete ? '完整' : `缺${totalCount - filledCount}项`}
+                    </span>
+                    <div class="qc-items">
+                        ${qcTags}
+                    </div>
+                    <div class="qc-completeness">
+                        <div class="qc-completeness-bar">
+                            <div class="qc-completeness-fill" style="width: ${completeness}%; background: ${completenessColor};"></div>
+                        </div>
+                        <div class="qc-completeness-label">
+                            <span>完整度 ${completeness}%</span>
+                            ${actionText ? `<span style="color:var(--primary-color);">${actionText}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="quality-control-section">
+                <div class="section-header">
+                    <h3>📊 记录质控视图</h3>
+                    <span class="section-badge">共 ${records.length} 条</span>
+                </div>
+                <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px;">
+                    快速检查每次随访的关键项填写情况，草稿可点击继续补填
+                </div>
+                <div class="qc-grid">
+                    ${qcCards}
+                </div>
             </div>
         `;
     }
@@ -1571,8 +1763,17 @@ class PeriodontalApp {
     }
 
     updateConclusionNote(value) {
+        const hadContent = Object.keys(this.followupData).length > 0 || 
+                          Object.keys(this.conclusionData).length > 0;
         this.conclusionData.note = value;
-        this.updateSummaryText();
+        const hasContentNow = Object.keys(this.followupData).length > 0 || 
+                              Object.keys(this.conclusionData).length > 0;
+        
+        if (!hadContent && hasContentNow) {
+            this.renderConclusionPanel();
+        } else {
+            this.updateSummaryText();
+        }
     }
 
     updateSummaryText() {
@@ -1687,13 +1888,16 @@ class PeriodontalApp {
 
         this.patients[pIndex].lastVisit = finalRecord.date;
 
+        const rec = recommendations.find(r => r.id === finalRecord.conclusion.recommendation);
+        const visit = visitOptions.find(v => v.value === finalRecord.conclusion.visitInterval);
+
         this.selectedPatient = this.patients[pIndex];
         this.editingDraftId = null;
         this.followupData = {};
         this.conclusionData = {};
         this.aiRecommendation = null;
         this.aiApplied = false;
-        this.expandedRecordIds = new Set();
+        this.expandedRecordIds = new Set([finalRecord.id]);
 
         this.saveToStorage();
         this.updateNotificationCount();
@@ -1710,7 +1914,7 @@ class PeriodontalApp {
         this.showToast(
             'success', 
             '复查结论已提交', 
-            `${this.currentDoctor?.name} · ${this.selectedPatient.name}\n建议：${rec?.title} · 复诊：${visit?.label}`
+            `${this.currentDoctor?.name} · ${this.selectedPatient.name}\n建议：${rec?.title || '未选择'} · 复诊：${visit?.label || '未选择'}`
         );
     }
 
